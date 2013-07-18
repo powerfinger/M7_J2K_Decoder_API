@@ -9,7 +9,7 @@
 
 BRDCTXJ2K card;
 unsigned char bufin[50*1024*1024];
-int tiff_en;
+int tiff_en, benchmark;
 int callbackcnt=0;
 char filename[_MAX_PATH];
 void tiff_write(char *filename, void *buf, int bitdepth, short nx, short ny);
@@ -17,18 +17,20 @@ void tiff_write(char *filename, void *buf, int bitdepth, short nx, short ny);
 void MyCallBack(int *buf)
 {
 //Save the last frame
-	if (tiff_en) tiff_write(filename,buf,tiff_en,card.dimx,card.dimy);
-	else {
-		FILE *fid;
-		fid = fopen(filename,"wb");
-		if (fid==0) {
-			printf("Could not open output file.\n");
-		}
+	if (!benchmark) {
+		if (tiff_en) tiff_write(filename,buf,tiff_en,card.dimx,card.dimy);
 		else {
-			fwrite(buf,1,card.bufsize,fid);
-			fclose(fid);
-		}
+			FILE *fid;
+			fid = fopen(filename,"wb");
+			if (fid==0) {
+				printf("Could not open output file.\n");
+			}
+			else {
+				fwrite(buf,1,card.bufsize,fid);
+				fclose(fid);
+			}
 
+		}
 	}
 	callbackcnt++;
 }
@@ -37,13 +39,14 @@ int main(int argc, char* argv[])
 {
 	int length;
 	FILE *fid;
-	unsigned int postcnt=0;
+	unsigned int start, end, postcnt=0;
 	char drive[_MAX_DRIVE], dir[_MAX_DIR], fname[_MAX_FNAME], ext[_MAX_EXT];
 
-	printf("\nJ2KDecode (Command Line decoder) Version 1.0 by Skymicro, Inc.\n");
+	printf("\nJ2KDecode (Command Line decoder) Version 2.0 by Skymicro, Inc.\n");
 	if ((argc != 11)&&(argc != 9)) {
 		printf("\nusage:   J2KDecode -b# -bd# -cf# -bs# -xc# -yc# srcfile dstfile [dimx dimy]\n\n");
 		printf("         -b#  - board number  - 1, 2, 3 or 4\n");
+		printf("                              - if \"+b#\" instead of \"-b#\" is used a benchmark will be run\n");
 		printf("         -bd# - bit depth     - 8  = 8  bit\n");
 		printf("                              - 10 = 10 bit\n");
 		printf("                              - 12 = 12 bit\n");
@@ -61,8 +64,8 @@ int main(int argc, char* argv[])
 		printf("         srcfile - Source J2K input file\n");
 		printf("         dstfile - Destination Uncomrpressed ouput file\n");
 		printf("                   if dstfile ends with .tif a TIFF file wrapper will be added\n");
-		printf("         dimx    - Width  of image\n");
-		printf("         dimy    - Height of image\n");
+		printf("         dimx    - Width  of image - only needed for TIFF file generation\n");
+		printf("         dimy    - Height of image - only needed for TIFF file generation\n");
 		printf("                   if dimx and dimy not specified they will be read from the J2K file\n\n");
 		printf("Example: J2KDecode -b1 -bd16 -cf1 -bs0 -xc1 -yc0 c:\\infile c:\\outfile.tif 1920 1080\n\n");
 		printf("         Will Convert: an XYZ J2K file to\n");
@@ -98,6 +101,9 @@ int main(int argc, char* argv[])
 	}
 
 //Set format bits
+	if (argv[1][0]=='+') benchmark=1;
+	else                 benchmark=0;
+
 	sscanf(&argv[2][3],"%d",&card.bitdepth);
 	if ((card.bitdepth!=8)&&(card.bitdepth!=10)&&(card.bitdepth!=12)&&(card.bitdepth!=16)) {
 		printf("Unsupported bitdepth.\n");
@@ -158,7 +164,21 @@ int main(int argc, char* argv[])
 	for(int i=1; i<length; i++) if ((bufin[i-1]==0xff)&&(bufin[i]==0xd9)) length=i+1;
 
 //Post frame
-	DecodeJ2K (&card,bufin,length,NULL); postcnt++;
+	if (benchmark) {
+		printf("\n");
+		start = time(NULL);
+		for (int i=0; i<1440; i++) {
+			DecodeJ2K (&card,bufin,length,NULL); postcnt++;
+			printf("Frames decoded = %d\r",i);
+		}
+		while (postcnt!=1440) Sleep(10);
+		end = time(NULL);
+		printf("Frames decoded = %d\r",1440);
+		printf("\n60 Seconds of video converted in %d seconds.  Frame rate = %d\n",end-start,1440/(end-start));
+	}
+	else {
+		DecodeJ2K (&card,bufin,length,NULL); postcnt++;
+	}
 
 //Wait for frame
 	while(callbackcnt<postcnt) Sleep(10);
